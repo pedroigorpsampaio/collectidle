@@ -1,0 +1,10 @@
+{
+    "configurations": [
+        {
+            "type": "pwa-chrome",
+            "name": "react-default",
+            "request": "launch",
+            "url": "http://localhost:3000"
+        }
+    ]
+}

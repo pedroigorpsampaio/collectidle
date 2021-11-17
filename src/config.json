@@ -1,0 +1,7 @@
+{
+    "TILESIZE": 64,
+    "BOARD_HEIGHT": 12,
+    "BOARD_WIDTH" : 6,
+    "INIT_X" : 350,
+    "INIT_Y" : 150
+  }
