@@ -9,6 +9,7 @@
     "@testing-library/user-event": "^12.1.10",
     "react": "^17.0.2",
     "react-dom": "^17.0.2",
+    "react-fps": "^1.0.4",
     "react-native-anchor-point": "^1.0.6",
     "react-scripts": "4.0.3",
     "vector2d": "^3.0.0",

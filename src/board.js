@@ -40,6 +40,8 @@ class Camera {
     y = config.INIT_Y; // current y position of the camera
     offset_x = 0; // the x offset of the board in the page
     offset_y = 0; // the y offset of the board in the page
+    vp_width = 0; // the viewport width of the game board
+    vp_height = 0; // the viewport height of the game board
     speed = 1; // camera speed
     zoom = 0.5; // current zoom of the camera to the board
     width = 4; // camera width in tiles
@@ -48,6 +50,10 @@ class Camera {
     angle = 0; // current camera angle (from 0 to 3 (0, 90, 180 and 270 degrees))
 }
 
+/**
+ * The component for the game board/map
+ * responsible for operations related to the tilemap
+ */
 class Board extends React.Component {
     constructor(props) {
       super(props);   
@@ -56,25 +62,85 @@ class Board extends React.Component {
       this.camera = new Camera();
       // centers camera
       let center = this.getBoardCenter()
-      this.camera.x += center.x - (config.BOARD_WIDTH*config.TILESIZE*this.camera.zoom)
-      this.camera.y += center.y - (config.BOARD_HEIGHT*config.TILESIZE*this.camera.zoom)/2
+      this.camera.x = center.x;
+      this.camera.y = center.y;
       this.state = {     
-        tiles: createAndFill2DArray({rows:config.BOARD_HEIGHT, columns:config.BOARD_WIDTH, defaultValue: '0'}),
-        tilesInv: null,
-        tilesNormal: createAndFill2DArray({rows:config.BOARD_HEIGHT, columns:config.BOARD_WIDTH, defaultValue: '0'}),
+        tiles: null,
+        layers: this.createLayers(),
         x: 0,
         y: 0,
         isMouseDown: false,
         isDragging: false,
+        isPlacing: true,
+        selectedTile: 1,
+        placeI: 0,
+        placeJ: 0,
+        placeL: 0,
         lastX: 0,
         lastY: 0,
         lastDragX: 0,
         lastDragY: 0
       };
-      // builds inverted tilemap for camera rotations
-      //this.state.tilesInv = transpose(this.state.tilesNormal);
-      //this.state.tiles = transpose(this.state.tilesInv);
+
+      this.state.tiles = this.state.layers[0];      
     }
+
+    /**
+     * Creates the world map with layers each containing a 2d array/matrix 
+     * that contains data of a layer/floor of the board
+     */
+    createLayers() {
+      var layers = [];
+      for(let l = 0; l < config.BOARD_LAYERS; l++) {
+        layers[l] = createAndFill2DArray({rows:config.BOARD_HEIGHT, columns:config.BOARD_WIDTH, defaultValue: '0'});
+      }
+      return layers;
+    }
+      
+    /**
+     * Returns a Vec2D with the coordinates to center isometric map
+     */
+    getBoardCenter() {
+      let j = config.BOARD_WIDTH;
+      let i = config.BOARD_HEIGHT;
+      return new Vec2D.Vector(window.innerWidth*0.70/2 - config.TILESIZE*this.camera.zoom/2 
+                                                        - (j-i)*(config.TILESIZE*this.camera.zoom/2)/2, 
+                              window.innerHeight*0.95/2 - (i+j)*(config.TILESIZE*this.camera.zoom/4)/2)
+    }
+
+    /**
+     * Position camera in order to position isometric tilemap 
+     * in the center of the screen based on layer 0 (first floor)
+     */
+    center(floorLayer) {
+      let j = floorLayer[0].length;
+      let i = floorLayer.length;
+      let center = new Vec2D.Vector(window.innerWidth*0.70/2 - config.TILESIZE*this.camera.zoom/2 
+                                                        - (j-i)*(config.TILESIZE*this.camera.zoom/2)/2, 
+                              window.innerHeight*0.95/2 - (i+j)*(config.TILESIZE*this.camera.zoom/4)/2)
+      this.camera.x = center.x;
+      this.camera.y = center.y;
+      this.setState({redraw: true});
+    }
+
+    /**
+     * Position center coordinates of the isometric map current position
+     * @param {the floorLayer - the layer containing the floor tilemap} floorLayer
+     */
+    getCenter(floorLayer) {
+      let j = floorLayer[0].length;
+      let i = floorLayer.length;
+      let offX = (j-i)*(config.TILESIZE*this.camera.zoom/2)/2;
+      let offY = (i+j)*(config.TILESIZE*this.camera.zoom/4)/2;
+      return new Vec2D.Vector(this.camera.x + offX + config.TILESIZE*this.camera.zoom/2, 
+                                            this.camera.y + offY);
+       
+      
+      //this.camera.x = center.x;
+      //this.camera.y = center.y;
+      //this.setState({redraw: true});
+    }
+    
   
     /**
      * Handles mouse up and down events
@@ -100,7 +166,7 @@ class Board extends React.Component {
      
       if(this.state.isMouseDown) {
         // drag event
-        if(e.nativeEvent.which === 3) {
+        if(e.buttons === 2) {
           this.setState({isDragging: true, lastDragX: e.pageX, lastDragY: e.pageY});
           // calculates drag direction 
           const mousePos = new Vec2D.Vector(e.pageX, e.pageY);
@@ -111,6 +177,11 @@ class Board extends React.Component {
         }
       } else {
         this.setState({isDragging: false});
+
+        // if user is placing a new tile, updates the projection of where it would go on placement
+        if(this.state.isPlacing) {
+          
+        }
       }
     }
   
@@ -119,37 +190,47 @@ class Board extends React.Component {
      * @param {offset to be added to the camera's current position} offset 
      */
     updateCamera(offset) {
-      this.camera.x += offset.x
-      this.camera.y += offset.y 
+      this.camera.x += offset.x;
+      this.camera.y += offset.y;    
     }
   
     /**
      * Rotates board in the desired direction orientation
      */
     rotate(direction) {
-      const matrix = this.state.tiles.slice();
-      console.log(matrix);
-      const rows = matrix.length, cols = matrix[0].length;
-      const grid = [];
-      for (let j = 0; j < cols; j++) {
-        grid[j] = Array(rows);
-      }
-      for (let i = 0; i < rows; i++) {
+      const newLayers = this.state.layers.slice();
+      const oldCenterX = this.getCenter(newLayers[0]).x;
+
+      for(let l = 0; l < this.state.layers.length; l++) {
+        const matrix = this.state.layers[l].slice();
+        const rows = matrix.length, cols = matrix[0].length;
+        const grid = [];
         for (let j = 0; j < cols; j++) {
-          let dirI = direction === "clockwise" ? rows-i-1 : i; 
-          let dirJ = direction === "clockwise" ? j : cols-j-1;
-          grid[j][i] = matrix[dirI][dirJ];
+          grid[j] = Array(rows);
         }
-      }
-       this.setState({tiles: grid});
+        for (let i = 0; i < rows; i++) {
+          for (let j = 0; j < cols; j++) {
+            let dirI = direction === "clockwise" ? rows-i-1 : i; 
+            let dirJ = direction === "clockwise" ? j : cols-j-1;
+            grid[j][i] = matrix[dirI][dirJ];
+          }
+        }
+        newLayers[l] = grid.slice();
+       }
+
+       const xOffset = this.getCenter(newLayers[0]).x - oldCenterX;
+       this.camera.x -= xOffset;
+       this.setState({layers: newLayers});
+       
        // updates camera to reflect correct position of rotated grid
-       this.rotateCamera(direction);
+       //this.rotateCamera(direction, newLayers[0]);
+       
     }
   
     /**
      * adjusts camera to match current board rotation
      */
-    rotateCamera(direction) {
+    rotateCamera(direction, floorLayer) {
       // updates angle
       if(direction === "clockwise") {
         this.camera.angle = (this.camera.angle + 1) % 4;
@@ -159,15 +240,20 @@ class Board extends React.Component {
           this.camera.angle = 3;
       }
   
+
+     // this.camera.x+= oldCamX;
+     // this.camera.y+= oldCamY;
+      //this.camera.x = (oldCamX);
+      //this.camera.y = (oldCamY);
       // adjusts camera x based on current angle of choice
       if(this.camera.angle === 1) {
-        this.camera.x -= (this.state.tiles.length*config.TILESIZE*this.camera.zoom/4);
+       // this.camera.x -= (this.state.layers[0].length*config.TILESIZE*this.camera.zoom/4);
       } else if (this.camera.angle === 2) {
-        this.camera.x += (this.state.tiles.length*config.TILESIZE*this.camera.zoom)/2;
+        //this.camera.x += (this.state.layers[0].length*config.TILESIZE*this.camera.zoom)/2;
       } else if (this.camera.angle === 3) {
-        this.camera.x -= (this.state.tiles.length*config.TILESIZE*this.camera.zoom/4);
+        //this.camera.x -= (this.state.layers[0].length*config.TILESIZE*this.camera.zoom/4);
       } else {
-        this.camera.x += (this.state.tiles.length*config.TILESIZE*this.camera.zoom)/2;
+        //this.camera.x += (this.state.layers[0].length*config.TILESIZE*this.camera.zoom)/2;
       }
     }
   
@@ -208,32 +294,46 @@ class Board extends React.Component {
   
       return [i, j];
     }
+
+    /**
+     * Renders each layer of the board/map by rendering all of its tiles
+     * @param {layer layer - The layer to be rendered} layer 
+     * @param {the l - the layer index to be rendered} l
+     */
+    renderLayer(layer, l) {
+      return (
+        [...Array(layer.length)].map((e, i) => <span key = {i}>{this.renderRow(layer, l, i)}</span>) 
+      )
+    }
   
     /**
      * Renders each row of the board/map by rendering all of its tiles
-     * @param {The index for the row to be rendered} i 
+     * @param {the layer - the layer currently being rendered} layer
+     * @param {the l - the index of the layer bein rendered} l
+     * @param {The index - the index for the row to be rendered} i 
      */
-    renderRow(i) {
+    renderRow(layer, l, i) {
       return (
-        [...Array(this.state.tiles[i].length)].map((e, j) => <span key = {j}>{this.renderTile(i, j)}</span>
+        [...Array(layer[i].length)].map((e, j) => <span key = {j}>{this.renderTile(layer, l, i, j)}</span>
         )
       )
     }
    
     /**
      * Renders the tile
+     * @param {The layer - the layer currently being rendered} layer
+     * @param {the l - the index of the layer being rendered} l
      * @param {The i-index of the tile} i 
      * @param {The j-index of the tile} j 
-     * @returns 
      */
-    renderTile(i, j) {
+    renderTile(layer, l, i, j) {
       return (
         <Tile 
-          value={this.state.tiles[i][j]} 
+          value={layer[i][j]} 
           //onClick={() => this.handleClick(i, j)}
           camera = {this.camera}
           center = {this.getBoardCenter()}
-          top={(i+j)*(config.TILESIZE*this.camera.zoom/4) + this.camera.y}
+          top={(i+j)*(config.TILESIZE*this.camera.zoom/4) + this.camera.y - (l*config.TILESIZE*this.camera.zoom/2)}
           left={(j-i)*(config.TILESIZE*this.camera.zoom/2) + this.camera.x}
         />
       )
@@ -250,19 +350,12 @@ class Board extends React.Component {
       }
     }
   
-    /**
-     * Returns a Vec2D with the point in the center of the isometric board
-     */
-    getBoardCenter() {
-    return new Vec2D.Vector((config.INIT_X - (config.BOARD_WIDTH*config.TILESIZE*this.camera.zoom/2)/2) 
-                                                                    + config.TILESIZE*this.camera.zoom/2, 
-                            (config.INIT_Y + (config.BOARD_HEIGHT*config.TILESIZE*this.camera.zoom/4)/2) 
-                                                                    + config.TILESIZE*this.camera.zoom/2)
-    }
-  
     render() {
-    //   var test_top = (0+0)*(config.TILESIZE*this.camera.zoom/4) + this.camera.y - config.TILESIZE*this.camera.zoom/2;
-    //   var test_left = (0-0)*(config.TILESIZE*this.camera.zoom/2) + this.camera.x;
+
+      // let center = this.getCenter(this.state.layers[0]);
+
+      // var test_top = center.y;
+      // var test_left = center.x;
   
       return (
         <div className="game-board" 
@@ -278,11 +371,13 @@ class Board extends React.Component {
                 if (!el) return;
                 this.camera.offset_x = el.getBoundingClientRect().left;
                 this.camera.offset_y = el.getBoundingClientRect().top;
+                this.camera.vp_width = el.getBoundingClientRect().right - el.getBoundingClientRect().left;
+                this.camera.vp_height = el.getBoundingClientRect().bottom - el.getBoundingClientRect().top;
               }}
         >
           <div
             onClick={() => this.handleClick(this.state.x, + this.state.y)}>
-              {[...Array(this.state.tiles.length)].map((e, i) => <span key = {i}>{this.renderRow(i)}</span>)}  
+              {[...Array(this.state.layers.length)].map((e, l) => <span key = {l}>{this.renderLayer(this.state.layers[l], l)}</span>)}  
               {/* { <Tile 
                 value={1} 
                 //onClick={() => this.handleClick(i, j)}
@@ -292,8 +387,9 @@ class Board extends React.Component {
                 left={test_left}
               /> } */}
           </div>
-          <button className = "rotate-button" onClick={()=>this.rotate("clockwise")}>Clockwise</button>
           <button className = "rotate-button" onClick={()=>this.rotate("anticlockwise")}>Anti-clockwise</button>
+          <button className = "rotate-button" onClick={()=>this.rotate("clockwise")}>Clockwise</button>
+          <button className = "center-button" onClick={()=>this.center(this.state.layers[0])}>Center</button>
         </div>
       );
     }

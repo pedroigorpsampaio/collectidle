@@ -1,6 +1,6 @@
 body {
   font: 14px "Century Gothic", Futura, sans-serif;
-  margin: 20px;
+  margin: 0px;
 }
 
 ol, ul {
@@ -51,6 +51,7 @@ ol, ul {
   height: 95vh;
   overflow: hidden;
   position: relative;
+  margin:20px;
 }
 
 .game-info {
@@ -58,5 +59,9 @@ ol, ul {
 }
 
 .rotate-button {
+  position: relative;
+}
+
+.center-button {
   position: relative;
 }

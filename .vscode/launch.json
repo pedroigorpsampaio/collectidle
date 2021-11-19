@@ -1,5 +1,14 @@
 {
     "configurations": [
+        // {
+        //     "type": "firefox",
+        //     "request": "launch",
+        //     "reAttach": true,
+        //     "name": "Launch localhost",
+        //     "url": "http://localhost:3000",
+        //     "webRoot": "${workspaceFolder}"
+        // },
+
         {
             "type": "pwa-chrome",
             "name": "react-default",
