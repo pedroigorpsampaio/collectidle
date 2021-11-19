@@ -2,5 +2,5 @@
     "TILESIZE": 64,
     "BOARD_HEIGHT": 12,
     "BOARD_WIDTH" : 7,
-    "BOARD_LAYERS": 1
+    "BOARD_LAYERS": 2
   }

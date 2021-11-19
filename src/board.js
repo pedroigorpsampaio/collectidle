@@ -13,6 +13,8 @@ import * as Vec2D from 'vector2d';
  */
 function Tile(props) {
     var tileSprite = tile0;
+    if(props.value === 0)
+      return (null);
     if (props.value % 2 === 0)
         tileSprite = tile1;
     else if (props.value % 3 === 0)
@@ -64,8 +66,7 @@ class Board extends React.Component {
       let center = this.getBoardCenter()
       this.camera.x = center.x;
       this.camera.y = center.y;
-      this.state = {     
-        tiles: null,
+      this.state = {
         layers: this.createLayers(),
         x: 0,
         y: 0,
@@ -81,8 +82,6 @@ class Board extends React.Component {
         lastDragX: 0,
         lastDragY: 0
       };
-
-      this.state.tiles = this.state.layers[0];      
     }
 
     /**
@@ -264,33 +263,75 @@ class Board extends React.Component {
      */
     handleClick(x, y) {
       if(!this.state.isDragging) {
-        const tiles = this.state.tiles.slice();
-        var idx = this.convertToMap(this.state.x, this.state.y);
-        var i = Math.floor(idx[0]);
-        var j = Math.floor(idx[1]);
-        tiles[i][j] = tiles[i][j] >= '1' ? '1' : '0';
-        this.setState({tiles: tiles});
+        const newLayers = this.state.layers.slice();
+
+        // dont mess with undefined
+        if (typeof newLayers == "undefined")
+          return;
+
+        // ** scans for hit in the layers starting from the layer at the top
+        for(let l = newLayers.length-1; l >= 0; l--) {
+          var idx = this.convertToMap(l, this.state.x, this.state.y);
+          var i = Math.floor(idx[0]);
+          var j = Math.floor(idx[1]);
+          
+          // dont mess with undefined
+          if (typeof newLayers[l] == "undefined") {
+            console.log("undef 1");
+            continue;
+          }
+          if (typeof newLayers[l][i] == "undefined")
+          {
+            console.log ("l: " + l + " / i: " + i);
+            console.log("undef 2");
+            continue;  
+          }
+          if (typeof newLayers[l][i][j] == "undefined") {
+            console.log("undef 3");
+            continue;
+          }
+
+          // if it hits some block
+          if(newLayers[l][i][j] !== 0) {     
+            // breaks loop if there is a tile on top of current one
+            if(l+1 < newLayers.length)
+              if(newLayers[l+1][i][j] !== 0)
+                break;
+            
+            // check if it hits somewhat the top plane of cube
+            let ty =(i+j)*(config.TILESIZE*this.camera.zoom/4) + this.camera.y - (l*config.TILESIZE*this.camera.zoom/2);
+            let cy = this.state.y - this.camera.y - this.camera.offset_y + (l*config.TILESIZE*this.camera.zoom/2);
+            let offsetY = cy - ty;
+            if(offsetY < config.TILESIZE*this.camera.zoom/2) {
+              newLayers[l][i][j] = 0; // updates it
+            }
+            break; // break loop
+          }
+        }
+        // updates layers in game state
+        this.setState({layers: newLayers});
       }
     }
   
     /**
      * Converts coordinates in the screen space (X,Y) of the page
-     * to the map coordinates (i,j) that represents the strucutre of tiles
-     * @param {The x coordinate to be converted to map index j} screenX 
-     * @param {The y coordinate to be converted to map index i} screenY 
+     * to the map coordinates (i,j) of a given layer
+     * @param {the l - the layer index to do the conversion accordingly}
+     * @param {The x - the x coordinate to be converted to map index j of layer} screenX 
+     * @param {The y - the y coordinate to be converted to map index i of layer} screenY 
      */
-    convertToMap(screenX, screenY) {
-      let TILESIZE_Z = config.TILESIZE * this.camera.zoom
+    convertToMap(l, screenX, screenY) {
+      let TILESIZE_Z = config.TILESIZE * this.camera.zoom;
       let TILE_HALF = TILESIZE_Z / 2;
   
-      screenX = screenX - TILE_HALF - this.camera.x - this.camera.offset_x
-      screenY = screenY - this.camera.y - this.camera.offset_y
+      screenX = screenX - TILE_HALF - this.camera.x - this.camera.offset_x;
+      screenY = screenY - this.camera.y - this.camera.offset_y + (l*config.TILESIZE*this.camera.zoom/2);
       let i = Math.trunc((screenY/TILE_HALF) - (screenX/TILESIZE_Z));
       let j = Math.trunc((screenY/TILE_HALF) + (screenX/TILESIZE_Z));
   
       // makes sure we do not pass the map 2darray limits
-      if (i < 0) i = 0; if(i>=this.state.tiles.length) i = this.state.tiles.length-1;
-      if (j < 0) j = 0; if(j>=this.state.tiles[0].length) j = this.state.tiles[0].length-1;
+      if (i < 0) i = 0; if(i>=this.state.layers[l].length) i = this.state.layers[l].length-1;
+      if (j < 0) j = 0; if(j>=this.state.layers[l][0].length) j = this.state.layers[l][0].length-1;
   
       return [i, j];
     }
@@ -421,8 +462,8 @@ class Board extends React.Component {
      * @param {* v The Vector 2D to be rotated around the provided center} v 
      * @returns A Vector2D with the result of the rotation 
      */
-    function rotateVec2D(cx, cy, degrees, v){
-        let angle = (Math.PI/180)*degrees;
-        return new Vec2D.Vector(Math.cos(angle) * (v.x - cx) - Math.sin(angle) * (v.y - cy) + cx,
-                                Math.sin(angle) * (v.x - cx) + Math.cos(angle) * (v.y - cy) + cy);
-    }
+    // function rotateVec2D(cx, cy, degrees, v){
+    //     let angle = (Math.PI/180)*degrees;
+    //     return new Vec2D.Vector(Math.cos(angle) * (v.x - cx) - Math.sin(angle) * (v.y - cy) + cx,
+    //                             Math.sin(angle) * (v.x - cx) + Math.cos(angle) * (v.y - cy) + cy);
+    // }
