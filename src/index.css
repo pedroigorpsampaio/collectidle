@@ -60,8 +60,15 @@ ol, ul {
 
 .rotate-button {
   position: relative;
+  z-index: 2147483647;
 }
 
 .center-button {
   position: relative;
+  z-index: 2147483647;
+}
+
+.building-button {
+  position: relative;
+  z-index: 2147483647;
 }
