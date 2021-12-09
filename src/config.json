@@ -1,6 +1,6 @@
 {
     "TILESIZE": 64,
-    "BOARD_HEIGHT": 20,
-    "BOARD_WIDTH" : 20,
+    "BOARD_HEIGHT": 200,
+    "BOARD_WIDTH" : 200,
     "BOARD_LAYERS": 1
   }

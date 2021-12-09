@@ -1,5 +1,5 @@
 import React from 'react';
-import config from './config.json'
+import config from './config.json';
 import tile0 from './assets/0.png';
 import tile1 from './assets/1.png';
 import tile2 from './assets/2.png';

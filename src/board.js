@@ -4,6 +4,9 @@ import Tile from './tile.js';
 import Camera from './camera.js';
 import background from './assets/backgrounds/bg_world.gif';
 import * as Vec2D from 'vector2d';
+import * as PIXI from 'pixi.js'
+import { Stage, Sprite, Container } from '@inlet/react-pixi'
+import tile0 from './assets/0.png';
 
 
 /**
@@ -32,7 +35,7 @@ class Board extends React.Component {
       this.viewport = new Viewport(); // creates viewport object later to be fulfilled 
 
       this.state = {
-        tiles: createAndFill2DArray({rows:config.BOARD_HEIGHT, columns:config.BOARD_WIDTH, defaultValue: '0'}),
+        tiles: this.props.tiles,
         x: 0,
         y: 0,
         camera: new Camera(), // creates board camera
@@ -43,13 +46,20 @@ class Board extends React.Component {
         lastX: 0,
         lastY: 0,
         lastDragX: 0,
-        lastDragY: 0
+        lastDragY: 0,
+        lastTick: 0,
       };
 
       //centers camera
       let center = this.getBoardCenter()
       this.state.camera.x = center.x;
       this.state.camera.y = center.y;
+    }
+
+    loadTiles() {
+      const tiles = this.state.tiles.slice();
+      tiles[config.BOARD_HEIGHT/2][config.BOARD_WIDTH/2] = 1;
+      this.setState({tiles:tiles});
     }
       
     /**
@@ -124,6 +134,9 @@ class Board extends React.Component {
           const offset = mousePos.subtract(lastDrag)
           // adjusts camera accordingly
           this.updateCamera(offset)
+        } else if(e.buttons === 1) { // if it is left click
+            if(this.state.isBuilding) // if it is building
+              this.placeBlock(); // delegate block placement to the method responsible for it
         }
       } else {
         this.setState({isDragging: false});
@@ -173,7 +186,7 @@ class Board extends React.Component {
      * @param {the x coord of the click to be handled} x 
      * @param {the y coord of the click to be handled} y 
      */
-    handleClick(x, y) {
+    handleClick(e, x, y) {
       if(!this.state.isDragging && !this.state.isBuilding) {
         const tiles = this.state.tiles.slice();
 
@@ -201,12 +214,7 @@ class Board extends React.Component {
         // updates layers in game state
         this.setState({tiles: tiles});
       } else if(this.state.isBuilding) { // is in building mode (able to place blocks)
-        let i = this.placeI; let j = this.placeJ;
-        if(i != null && j != null) { // has a valid place to place block
-          //const tiles = this.state.tiles.slice();
-          //tiles[i].splice(j, 0, this.state.selectedTile);
-          //console.log(i);
-        }
+        this.placeBlock();
       }
     }
   
@@ -294,12 +302,27 @@ class Board extends React.Component {
 
           // only push to be rendered if its not an empty tile slot
           if(this.state.tiles[y][x] !== 0)
-            rows.push(<span key = {rows.length}>{this.renderTile(y,x)}</span>);
+            rows.push(this.renderPixiTile(y,x, rows.length));
         }
       }
       // updates viewport dimensions of this rendered frame
       this.viewport.rfWidth = this.viewport.width; this.viewport.rfHeight = this.viewport.height;
+
       return rows;
+    }
+
+    renderPixiTile(i, j, key) {
+      return(
+        <Sprite
+          key={key}
+          scale={this.state.camera.zoom}
+          x={(j-i)*(config.TILESIZE*this.state.camera.zoom/2) + this.state.camera.x}
+          y={(i+j)*(config.TILESIZE*this.state.camera.zoom/4) + this.state.camera.y}
+          zIndex = {i+j+2}
+          image={tile0}
+        />
+      )
+
     }
    
     /**
@@ -307,10 +330,11 @@ class Board extends React.Component {
      * @param {The i-index of the tile} i 
      * @param {The j-index of the tile} j 
      */
-    renderTile(i, j) {
+    renderTile(i, j, key) {
       return (
         <Tile 
           value={this.state.tiles[i][j]} 
+          key={key}
           //onClick={() => this.handleClick(i, j)}
           camera = {this.state.camera}
           zIndex = {i+j+2}
@@ -330,8 +354,10 @@ class Board extends React.Component {
       var top = mY - this.state.camera.zoom*config.TILESIZE/4;
       var left = mX - this.state.camera.zoom*config.TILESIZE/2;
       var opacity = 0.5;
+      var blendMode = PIXI.BLEND_MODES.NORMAL;
+      var tint = 0xFFFFFF;
       // placement position (null if not valid)
-      var placeI = null ; var placeJ = null; var saturation = 1; var zIndex = 2147483646;
+      var placeI = null ; var placeJ = null; var zIndex = 2147483646;
 
       var idx = this.convertToMap(this.state.x, this.state.y);
       var i = Math.floor(idx[0]);
@@ -353,9 +379,9 @@ class Board extends React.Component {
           if(!this.isAtCorner(i, j)) {
             top=(i+j)*(config.TILESIZE*this.state.camera.zoom/4) + this.state.camera.y
             left=(j-i)*(config.TILESIZE*this.state.camera.zoom/2) + this.state.camera.x
-            opacity = 1;
+            opacity = 0.5; blendMode = PIXI.BLEND_MODES.ADD; tint = 0x46ff00;
             placeI = oldI; placeJ = oldJ; // updates placement indexes with a valid placement position
-            saturation = 64; zIndex = i+j+2;
+            zIndex = i+j+2;
           }
         }
       } else { // empty slot is a valid position if there is a neighbour tile
@@ -366,9 +392,9 @@ class Board extends React.Component {
           //console.log("Im a valid poisition to place block");
           top=(i+j)*(config.TILESIZE*this.state.camera.zoom/4) + this.state.camera.y
           left=(j-i)*(config.TILESIZE*this.state.camera.zoom/2) + this.state.camera.x
-          opacity = 1;
+          opacity = 0.5; blendMode = PIXI.BLEND_MODES.ADD; tint = 0x46ff00;
           placeI = i; placeJ = j; // updates placement indexes with a valid placement position
-          saturation = 64; zIndex = i+j+2;
+          zIndex = i+j+2;
         }
       }
 
@@ -376,17 +402,31 @@ class Board extends React.Component {
       // or with the indexes of a valid position
       this.placeI = placeI; this.placeJ = placeJ;
 
-      return ( 
-        <Tile 
-          value={this.state.selectedTile} 
-          camera = {this.state.camera}
-          opacity = {opacity}
+      // return ( 
+      //   <Tile 
+      //     value={this.state.selectedTile} 
+      //     camera = {this.state.camera}
+      //     opacity = {opacity}
+      //     zIndex = {zIndex}
+      //     saturation = {saturation}
+      //     top={top}
+      //     left={left}
+      //   />
+      // );
+
+      return(
+        <Sprite
+          scale={this.state.camera.zoom}
+          x={left}
+          y={top}
+          filters={200}
           zIndex = {zIndex}
-          saturation = {saturation}
-          top={top}
-          left={left}
+          alpha = {opacity}
+          image={tile0}
+          blendMode={blendMode}
+          tint={tint}
         />
-      );
+      )
     }
 
     /**
@@ -423,6 +463,21 @@ class Board extends React.Component {
     toggleBuild() {
       this.state.isBuilding ? this.setState({isBuilding:false}) : this.setState({isBuilding:true});
     }
+
+    /**
+     * Place block in the stored placement position
+     */
+    placeBlock() {
+      let i = this.placeI; let j = this.placeJ;
+      let valid = i != null ? (j != null ? (i >= 0 ? (j>=0? (i < config.BOARD_HEIGHT ? 
+                                (j < config.BOARD_WIDTH ? true : false) : false) 
+                                  : false): false) : false) : false;
+      if(valid) { // has a valid place to place block
+        const tiles = this.state.tiles.slice();
+        tiles[i][j] = this.state.selectedTile;
+        this.setState({tiles:tiles});
+      }
+    }
   
     // change zoom based on mwheel
     onWheel (e) {
@@ -430,7 +485,13 @@ class Board extends React.Component {
   
       if((this.state.camera.zoom + scroll) > 0 && (this.state.camera.zoom + scroll) <= this.state.camera.max_zoom) {
         const camera = Object.assign({}, this.state.camera); 
-        camera.zoom += scroll;
+        const oldZoom = camera.zoom;
+        camera.zoom += scroll;       
+        const newZoom = camera.zoom;
+        const oldHeight = config.TILESIZE*config.BOARD_HEIGHT*oldZoom;
+        const newHeight = config.TILESIZE*config.BOARD_HEIGHT*newZoom;
+        const dH = newHeight - oldHeight;
+        camera.y = camera.y - dH/4;
         this.setState({camera:camera});
       }
     }
@@ -441,7 +502,7 @@ class Board extends React.Component {
 
       //  var test_top = this.state.y - this.viewport.offset_y;
       //  var test_left = this.state.camera.x;
-  
+      
       return (
         <div className="game-board" 
             style={{ backgroundImage: `url(${background})`,   
@@ -460,11 +521,33 @@ class Board extends React.Component {
                 this.viewport.width = el.getBoundingClientRect().right - el.getBoundingClientRect().left;
                 this.viewport.height = el.getBoundingClientRect().bottom - el.getBoundingClientRect().top;
               }}
-        >
+        > 
           <div
-            onClick={() => this.handleClick(this.state.x, this.state.y)}>
-              {this.renderTilemap()}  
-              {this.state.isBuilding ? this.renderProjection() : null}
+            //onClick={() => this.handleClick(this.state.x, this.state.y)}
+            >
+              <Stage width = {this.viewport.width} height={this.viewport.height} options={{ backgroundAlpha: 0 , resizeTo: window}}>
+                <Container sortableChildren = {true} interactive = {true} pointerup={(e) => this.handleClick(e, this.state.x, this.state.y)}>
+                  {this.renderTilemap()}
+                  {this.state.isBuilding ? this.renderProjection() : null}
+                </Container>
+                <Sprite
+                    scale={this.state.camera.zoom}
+                    x={50}
+                    y={50}
+                    width={50}
+                    height={50}
+                    zIndex = {2147483647}
+                    image={"https://s3-us-west-2.amazonaws.com/s.cdpn.io/693612/coin.png"}
+                    interactive={true}
+                    buttonMode={true}
+                    pointerup={()=>this.toggleBuild()}
+                  />
+              </Stage>
+              
+              <button className = "rotate-button" onClick={()=>this.rotate("anticlockwise")}>Anti-clockwise</button>
+              <button className = "rotate-button" onClick={()=>this.rotate("clockwise")}>Clockwise</button>
+              <button className = "center-button" onClick={()=>this.center()}>Center</button>
+              <button className = "building-button" onClick={()=>this.toggleBuild()}>{this.state.isBuilding ? "Cancel" : "Add Block"}</button>
               {/* { <Tile 
                 value={1} 
                 //onClick={() => this.handleClick(i, j)}
@@ -474,10 +557,6 @@ class Board extends React.Component {
                 left={test_left}
               /> } */}
           </div>
-          <button className = "rotate-button" onClick={()=>this.rotate("anticlockwise")}>Anti-clockwise</button>
-          <button className = "rotate-button" onClick={()=>this.rotate("clockwise")}>Clockwise</button>
-          <button className = "center-button" onClick={()=>this.center()}>Center</button>
-          <button className = "building-button" onClick={()=>this.toggleBuild()}>{this.state.isBuilding ? "Cancel" : "Add Block"}</button>
         </div>
       );
     }
@@ -490,16 +569,23 @@ class Board extends React.Component {
       let dH = Math.abs(this.viewport.rfHeight -  (window.innerHeight*0.95)); 
       let tZ = config.TILESIZE * this.state.camera.zoom;
       if(dW >= tZ/8 || dH >= tZ/8) {
-        this.forceUpdate()
-        this.setState({delta: dW+dH})
+        this.forceUpdate();
+        this.setState({delta: dW+dH});
       }
     }
 
+    /**
+     * Called when component is mounted
+     */
     componentDidMount() {
       window.addEventListener('resize', this.resize);
-      this.forceUpdate()
+      this.forceUpdate();
+      //this.loadTiles(); // load initial tiles
     }
     
+    /**
+     * Called when component is unmounted
+     */
     componentWillUnmount() {
       window.removeEventListener('resize', this.resize);
     }
@@ -517,7 +603,7 @@ class Board extends React.Component {
  * @param defaultValue The default value for each field of the array
  * @returns The newly created multidimensional array populated with the default value
  */
-function createAndFill2DArray({rows, columns, defaultValue}){
-    return Array.from({ length:rows }, (e, i) => (
-    Array.from({ length:columns }, (e, j)=> i+j+1)));
-}
+// function createAndFill2DArray({rows, columns, defaultValue}){
+//     return Array.from({ length:rows }, (e, i) => (
+//     Array.from({ length:columns }, (e, j)=> defaultValue)));
+// }
