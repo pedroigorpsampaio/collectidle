@@ -19,7 +19,8 @@ class Game extends React.Component {
       loadProgress: 0,
       loadText: "Loading map...",
       current: STATE_LOADING,
-      tiles: null
+      tiles: null,
+      isNewBoard: true
     }
   }
   
@@ -49,13 +50,13 @@ class Game extends React.Component {
       // creates worker
       this.boardWorker = new Worker(Load.getWorkerScript());
       // send load map message
-      this.boardWorker.postMessage({'cmd': 'loadMap', 'rows': Config.BOARD_HEIGHT, 'columns': Config.BOARD_WIDTH, 'defaultValue': 1});
+      this.boardWorker.postMessage({'cmd': 'loadMap', 'rows': Config.BOARD_SIZE, 'columns': Config.BOARD_SIZE, 'defaultValue': 0});
       this.boardWorker.onmessage = e => {
         if(e.data.cmd === "updateProgress")
           this.setState({loadProgress: e.data.progress});
         else  if(e.data.cmd === "receiveBoard"){
           const tiles = new Uint8Array(e.data.tiles); // gets board as an Uint8Array to be converted to a matrix and stored
-          this.setState({tiles: this.matrixify(tiles, Config.BOARD_HEIGHT, Config.BOARD_WIDTH), current:STATE_RUNNING});
+          this.setState({tiles: this.matrixify(tiles, Config.BOARD_SIZE, Config.BOARD_SIZE), current:STATE_RUNNING});
         }
       };
 
@@ -84,8 +85,7 @@ class Game extends React.Component {
         console.log("Unknown game state: Game state must be one of the defined ones");
         break;
     }
-
-    return content;
+     return content;
   }
 
   // Renders Board
@@ -93,7 +93,7 @@ class Game extends React.Component {
     return (
       <div className="game" >
         <div>
-          <Board tiles={this.state.tiles}/>
+          <Board tiles={this.state.tiles} isNewBoard={this.state.isNewBoard}/>
         </div>
         <div className="game-info">
           <FpsView width={40} height={10} left={0} top={0}/>

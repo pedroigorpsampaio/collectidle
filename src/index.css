@@ -47,10 +47,8 @@ ol, ul {
 
 .game-board {
   border: 1px solid #333333;
-  width: 70vw;
-  height: 95vh;
   overflow: hidden;
-  position: relative;
+  position: absolute;
   margin:20px;
 }
 
