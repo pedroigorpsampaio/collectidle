@@ -16,7 +16,7 @@ const workercode = () => {
             // get params
             const rows = e.data.rows; const columns = e.data.columns; const defaultValue = e.data.defaultValue;
             // creates game array as one dimension for faster message transfer
-            const tiles = new Uint8Array(rows*columns);
+            const tiles = new Int8Array(rows*columns);
             // count for the progress calculation
             var count = 0;
 

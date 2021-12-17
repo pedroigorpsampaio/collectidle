@@ -3,22 +3,17 @@ import config from './config.json'
 import Tile from './tile.js';
 import Camera from './camera.js';
 import * as Vec2D from 'vector2d';
-import * as PIXI from 'pixi.js'
 import { PixiComponent } from './pixicomponent.js';
 
 /**
  * Building block data
  */
 class BuildBlock {
-  selectedTile = 1; // selected tile to build
   x = 0; // the x position of building block;
   y = 0; // the y position of building block;
   placeI = null; // matrix index I to build block
   placeJ = null; // matrix index J to build block
-  alpha = 0.5; // opacity of building block
   zIndex = 2147483646; // the z-index of building block
-  blendMode = PIXI.BLEND_MODES.NORMAL; // the blend mode of building block
-  tint = 0xFFFFFF; // the color to apply tint over building block
 }
 
 /**
@@ -36,7 +31,6 @@ class Board extends React.Component {
       block: new BuildBlock(), // building block data
       isMouseDown: false, // is a mouse button currently down
       isDragging: false, // is the user currently dragging
-      isBuilding: false, // is the user currently in building mode
       lastX: 0,
       lastY: 0,
       lastDragX: 0,
@@ -56,9 +50,7 @@ class Board extends React.Component {
 
   loadTiles() {
     const tiles = this.state.tiles.slice();
-    tiles[Math.floor(config.BOARD_SIZE / 2)][Math.floor(config.BOARD_SIZE / 2)] = 1;
-    //tiles[config.BOARD_SIZE / 2 + 1][config.BOARD_SIZE / 2] = 1;
-   // tiles[config.BOARD_SIZE / 2 + 1][config.BOARD_SIZE / 2 + 1] = 1;
+    tiles[Math.floor(config.BOARD_SIZE / 2)][Math.floor(config.BOARD_SIZE / 2)] = 0;
   }
 
   /**
@@ -155,7 +147,8 @@ class Board extends React.Component {
         // adjusts camera accordingly
         this.updateCamera(offset)
       } else if (e.data.buttons === 1) { // if it is left click
-        if (this.state.isBuilding) // if it is building
+        let isBuilding = this.props.selectedBlock > -1 ? true : false;
+        if (isBuilding) // if it is building
           this.placeBlock(); // delegate block placement to the method responsible for it
       }
     } else {
@@ -218,7 +211,8 @@ class Board extends React.Component {
    * @param {the y coord of the click to be handled} y 
    */
   handleClick(e, x, y) {
-    if (!this.state.isDragging && !this.state.isBuilding) {
+    let isBuilding = this.props.selectedBlock > -1 ? true : false;
+    if (!this.state.isDragging && !isBuilding) {
       const tiles = this.state.tiles.slice();
 
       // dont mess with undefined
@@ -245,7 +239,7 @@ class Board extends React.Component {
 
       // updates layers in game state
       this.setState({ tiles: tiles });
-    } else if (this.state.isBuilding && e.data.button === 0) { // is in building mode (able to place blocks)
+    } else if (isBuilding && e.data.button === 0) { // is in building mode (able to place blocks)
       this.placeBlock();
     }
   }
@@ -333,9 +327,6 @@ class Board extends React.Component {
     const mY = this.state.y;
     var top = mY - this.state.camera.zoom * config.TILESIZE / 4;
     var left = mX - this.state.camera.zoom * config.TILESIZE / 2;
-    var alpha = 0.5;
-    var blendMode = PIXI.BLEND_MODES.NORMAL;
-    var tint = 0xFFFFFF;
     // placement position (null if not valid)
     var placeI = null; var placeJ = null; var zIndex = 2147483646;
 
@@ -346,7 +337,7 @@ class Board extends React.Component {
     // precision calculation
     let topFactor = this.getTopFactor(i, j, this.state.x, this.state.y);
 
-    if (tiles[i][j] !== 0) {  // borders of board
+    if (tiles[i][j] !== -1) {  // borders of board
       if (topFactor >= 1 && topFactor <= 3) { // is within acceptable distance of border and has neighbour
         idx = this.convertToMap(this.state.x, this.state.y, false); // gets position 
         i = Math.floor(idx[0]);
@@ -359,7 +350,6 @@ class Board extends React.Component {
         if (!this.isAtCorner(i, j)) {
           top = (i + j) * (config.TILESIZE * this.state.camera.zoom / 4) + this.state.camera.y
           left = (j - i) * (config.TILESIZE * this.state.camera.zoom / 2) + this.state.camera.x
-          alpha = 0.5; blendMode = PIXI.BLEND_MODES.ADD; tint = 0x46ff00;
           placeI = oldI; placeJ = oldJ; // updates placement indexes with a valid placement position
           zIndex = i + j + 2;
         }
@@ -372,7 +362,6 @@ class Board extends React.Component {
         //console.log("Im a valid poisition to place block");
         top = (i + j) * (config.TILESIZE * this.state.camera.zoom / 4) + this.state.camera.y
         left = (j - i) * (config.TILESIZE * this.state.camera.zoom / 2) + this.state.camera.x
-        alpha = 0.5; blendMode = PIXI.BLEND_MODES.ADD; tint = 0x46ff00;
         placeI = i; placeJ = j; // updates placement indexes with a valid placement position
         zIndex = i + j + 2;
       }
@@ -380,9 +369,10 @@ class Board extends React.Component {
 
     // updates block data
     const block = Object.assign({}, this.state.block);
-    block.placeI = placeI; block.placeJ = placeJ; block.tint = tint; block.alpha = alpha;
-    block.x = left; block.y = top; block.zIndex = zIndex; block.blendMode = blendMode;
+    block.placeI = placeI; block.placeJ = placeJ;
+    block.x = left; block.y = top; block.zIndex = zIndex;
     this.setState({block:block});
+    return block;
   }
 
   /**
@@ -392,10 +382,10 @@ class Board extends React.Component {
    */
   hasNeighbour(i, j) {
     const tiles = this.state.tiles.slice();
-    const left = j - 1 >= 0 ? (tiles[i][j - 1] !== 0 ? true : false) : false;
-    const right = j + 1 < tiles[i].length ? (tiles[i][j + 1] !== 0 ? true : false) : false;
-    const up = i - 1 >= 0 ? (tiles[i - 1][j] !== 0 ? true : false) : false;
-    const down = i + 1 < tiles.length ? (tiles[i + 1][j] !== 0 ? true : false) : false;
+    const left = j - 1 >= 0 ? (tiles[i][j - 1] !== -1 ? true : false) : false;
+    const right = j + 1 < tiles[i].length ? (tiles[i][j + 1] !== -1 ? true : false) : false;
+    const up = i - 1 >= 0 ? (tiles[i - 1][j] !== -1 ? true : false) : false;
+    const down = i + 1 < tiles.length ? (tiles[i + 1][j] !== -1 ? true : false) : false;
     return left || right || up || down;
   }
 
@@ -414,13 +404,6 @@ class Board extends React.Component {
   }
 
   /**
-   * changes related to the building mode
-   */
-  toggleBuild() {
-    this.state.isBuilding ? this.setState({ isBuilding: false }) : this.setState({ isBuilding: true });
-  }
-
-  /**
    * Place block in the stored placement position
    */
   placeBlock() {
@@ -430,7 +413,8 @@ class Board extends React.Component {
       : false) : false) : false) : false;
     if (valid) { // has a valid place to place block
       const tiles = this.state.tiles.slice();
-      tiles[i][j] = this.state.block.selectedTile;
+      tiles[i][j] = this.props.selectedBlock;
+      this.props.resetBlock();
       this.setState({ tiles: tiles });
     }
   }
@@ -461,12 +445,13 @@ class Board extends React.Component {
             onMouseUp={this.handleMouseClick}
             onMouseMove={this.onMouseMove.bind(this)}
             onWheel={this.onWheel.bind(this)}
-            onBuildingBtn={this.toggleBuild.bind(this)}
             onRotateAntiBtn={() => this.rotate("anticlockwise")}
             onCenterBtn={this.center.bind(this)}
             onRotateBtn={() => this.rotate("clockwise")}
             updateProjection={this.updateProjection.bind(this)}
-            state={this.state} />
+            state={this.state}
+            selectedBlock={this.props.selectedBlock}
+            blocksSheet={this.props.blocksSheet} blocksData={this.props.blocksData}/>
         </div>
         {/* <button className="rotate-button" onClick={() => this.rotate("anticlockwise")}>Anti-clockwise</button>
         <button className="rotate-button" onClick={() => this.rotate("clockwise")}>Clockwise</button>

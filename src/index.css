@@ -56,6 +56,45 @@ ol, ul {
   margin-left: 20px;
 }
 
+.game-ui {
+  position: absolute;  
+  right: 10px;  
+  top: 20px;
+  width: 25%;
+}
+
+/* for virutalized list */
+.list {
+  height: 55vh
+}
+
+/*  game accordion style */
+.accordion {
+  overflow: scroll;
+  height: calc(95vh - 0.095vh - 1px);
+  border-radius: 2px;
+  border: 1px solid #250101;
+  background-color: #fff3ca;
+}
+
+.accordion-child {
+  width: 96%; 
+  margin-left: 2%;
+  height: 96%;
+  margin-top: 2%;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+* {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
 .rotate-button {
   position: relative;
   z-index: 2147483647;

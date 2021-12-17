@@ -1,9 +1,8 @@
 import * as React from 'react';
 import * as PIXI from 'pixi.js';
-import tile0 from './assets/0.png';
+import emptyTile from './assets/0.png';
 import btnSheet from './assets/buttons/buttons.png';
 import btnSheetJson from './assets/buttons/buttons.json';
-import tile1 from './assets/1.png';
 import config from './config.json';
 import * as Vec2D from 'vector2d';
 import background from './assets/backgrounds/bg_world.gif';
@@ -15,12 +14,14 @@ export class PixiComponent extends React.Component {
   componentDidMount() {
     this.camera = this.props.state.camera;
     this.tiles = this.props.state.tiles;
-    this.isBuilding = this.props.state.isBuilding;
+    this.selectedBlock = this.props.selectedBlock;
+    this.isBuilding = this.selectedBlock > -1 ? true : false;
+    this.blocksSheet = this.props.blocksSheet; this.blocksData = this.props.blocksData;
 
     this.app = new PIXI.Application({ 
       width: window.innerWidth*0.70, height: window.innerHeight*0.95, 
-      backgroundAlpha: 0, resolution: window.devicePixelRatio || 1
-  });
+      backgroundAlpha: 0, 
+    });
     document.body.appendChild(this.app.view);
     this.app.view.style.position = 'absolute';this.app.view.style.left = '20px';this.app.view.style.top = '20px';
 
@@ -31,13 +32,19 @@ export class PixiComponent extends React.Component {
     this.container.sortableChildren = true;
     this.app.stage.addChild(this.container);
     
-    // Create a new texture
-    this.texture0 = PIXI.Texture.from(tile0);
-    this.texture1 = PIXI.Texture.from(tile1);
+    // Create empty slot texture
+    this.emptyTex = PIXI.Texture.from(emptyTile);
 
     // loads buttons spritesheet and render them when loading is complete
     this.loader = new PIXI.Loader();
-    this.loader.add("./assets/buttons/buttons.json").load(this.renderButtons());
+    this.renderButtons();
+
+    // creates blocks spritesheet and render them
+    const baseTexture = PIXI.BaseTexture.from(this.props.blocksSheet);
+    this.blSheet = new PIXI.Spritesheet(baseTexture, this.props.blocksData);
+    this.blSheet.parse(() => {
+      Object.keys(this.blSheet.textures).map((t) => this.blSheet.textures[t]);
+    });
 
     // renders tilemap
     this.renderTilemap();
@@ -75,7 +82,9 @@ export class PixiComponent extends React.Component {
     // updates data sent via props
     this.camera = this.props.state.camera;
     this.tiles = this.props.state.tiles;
-    this.isBuilding = this.props.state.isBuilding;
+    this.selectedBlock = this.props.selectedBlock;
+    this.isBuilding = this.selectedBlock > -1 ? true : false;
+    this.blocksSheet = this.props.blocksSheet; this.blocksData = this.props.blocksData;
     this.block = this.props.state.block;
 
     // clears container
@@ -83,8 +92,9 @@ export class PixiComponent extends React.Component {
     // start rendering 
     this.renderTilemap(); // render tilemap
     if(this.isBuilding) { // if it is in building mode
-      this.props.updateProjection(); // updates projection via props method
-      this.renderProjection(); // render projection
+      this.block = this.props.updateProjection(); // updates projection via props method
+      if(this.isOnScreen(this.block, config.TILESIZE*this.camera.zoom, config.TILESIZE*this.camera.zoom))
+        this.renderProjection(); // render projection (if its on screen)
     }
   }
   
@@ -94,6 +104,17 @@ export class PixiComponent extends React.Component {
   componentWillUnmount() {
     this.app.stop();
   }
+
+  /**
+   * Checks if an entity is on viewport screen
+   * @param {*} entity the entity to check
+   */
+  isOnScreen(entity, width, height) {
+    let onScreen = !((entity.x > this.app.screen.width) || (entity.x < this.app.screen.x-(width)) ||
+                      entity.y > this.app.screen.height || (entity.y < this.app.screen.y-(height)));
+    return onScreen;
+  }
+
   /**
    * Returns a Vec2D with the coordinates to center isometric map with camera at 0
    */
@@ -126,10 +147,6 @@ export class PixiComponent extends React.Component {
     sheet.parse(() => {
       Object.keys(sheet.textures).map((t) => sheet.textures[t]);
     });
-    // create the building btn sprite
-    this.buildingBtn = new PIXI.Sprite(sheet.textures["test.png"]);
-    this.buildingBtn.interactive = true;
-    this.buildingBtn.buttonMode = true;
     // create the rotate anticlockwise btn sprite
     this.rotateAntiBtn = new PIXI.Sprite(sheet.textures["LeftArrow (1).png"]);
     this.rotateAntiBtn.interactive = true;
@@ -143,31 +160,21 @@ export class PixiComponent extends React.Component {
     this.rotateBtn.interactive = true;
     this.rotateBtn.buttonMode = true;
     // set the position and dimensions 
-    this.buildingBtn.position.x = 30;
-    this.buildingBtn.position.y = 30;
-    this.buildingBtn.width = 30;
-    this.buildingBtn.height = 30;
-
-    this.rotateAntiBtn.position.x = this.buildingBtn.position.x + this.buildingBtn.width + 10;
-    this.rotateAntiBtn.position.y = this.buildingBtn.position.y;
+    this.rotateAntiBtn.position.x = 30
+    this.rotateAntiBtn.position.y = 30;
     this.rotateAntiBtn.width = 30;
     this.rotateAntiBtn.height = 30;
 
-    this.centerBtn.position.x = this.rotateAntiBtn.position.x + this.buildingBtn.width + 10;
+    this.centerBtn.position.x = this.rotateAntiBtn.position.x + this.rotateAntiBtn.width + 10;
     this.centerBtn.position.y = this.rotateAntiBtn.position.y;
     this.centerBtn.width = 30;
     this.centerBtn.height = 30;
     
-    this.rotateBtn.position.x = this.centerBtn.position.x + this.buildingBtn.width + 10;
+    this.rotateBtn.position.x = this.centerBtn.position.x + this.rotateAntiBtn.width + 10;
     this.rotateBtn.position.y = this.centerBtn.position.y;
     this.rotateBtn.width = 30;
     this.rotateBtn.height = 30;
     // set the callbacks
-    this.buildingBtn.on("pointerdown", (e) => {e.stopPropagation(); this.buildingBtn.tint=0x1FC012});
-    this.buildingBtn.on("pointerout", (e) => {e.stopPropagation(); this.buildingBtn.tint=0xFFFFFF});
-    this.buildingBtn.on("pointerup", (e) => {e.stopPropagation(); this.buildingBtn.tint=0xFFFFFF});
-    this.buildingBtn.on("click", (e) => this.props.onBuildingBtn(e));
-
     this.rotateAntiBtn.on("pointerdown", (e) => {e.stopPropagation(); this.rotateAntiBtn.tint=0x1FC012});
     this.rotateAntiBtn.on("pointerout", (e) => {e.stopPropagation(); this.rotateAntiBtn.tint=0xFFFFFF});
     this.rotateAntiBtn.on("pointerup", (e) => {e.stopPropagation(); this.rotateAntiBtn.tint=0xFFFFFF});
@@ -183,7 +190,6 @@ export class PixiComponent extends React.Component {
     this.rotateBtn.on("pointerup", (e) => {e.stopPropagation(); this.rotateBtn.tint=0xFFFFFF});
     this.rotateBtn.on("click", (e) => this.props.onRotateBtn(e));
     // finally add the new button
-    this.app.stage.addChild(this.buildingBtn);
     this.app.stage.addChild(this.rotateAntiBtn);
     this.app.stage.addChild(this.centerBtn);
     this.app.stage.addChild(this.rotateBtn);
@@ -193,17 +199,16 @@ export class PixiComponent extends React.Component {
    * Render projected tile for building blocks mode
    */
   renderProjection() {
-      // create and add tile to the container
-      const tile = this.block.selectedTile === 1 ? new PIXI.Sprite(this.texture1) : new PIXI.Sprite(this.texture0);
-      tile.zIndex = this.block.zIndex;
-      tile.x = this.block.x;
-      tile.y = this.block.y;
-      tile.alpha = this.block.alpha;
-      tile.blendMode = this.block.blendMode;
-      tile.tint = this.block.tint;
-      tile.scale.x = this.camera.zoom;
-      tile.scale.y = this.camera.zoom;
-      this.container.addChild(tile);
+    // create and add block projection to the container
+    const block = new PIXI.Sprite(this.blSheet.textures[this.selectedBlock+".png"]);
+    block.zIndex = this.block.zIndex;
+    block.x = this.block.x;
+    block.y = this.block.y;
+    block.alpha = 0.5;
+    block.blendMode = PIXI.BLEND_MODES.ADD;
+    block.width = config.TILESIZE*this.camera.zoom;
+    block.height = config.TILESIZE*this.camera.zoom;
+    this.container.addChild(block);
   }
 
   /**
@@ -231,15 +236,17 @@ export class PixiComponent extends React.Component {
         // border control
         if(x<0 || x>=config.BOARD_SIZE || y<0 || y>= config.BOARD_SIZE) continue;
         // if its not in building mode and there is no tile, do not draw demarcation tiles 
-        if(!this.isBuilding && this.tiles[y][x] === 0) continue;
+        if(!this.isBuilding && this.tiles[y][x] === -1) continue;
         // create and add tile to the container
-        const tile = this.tiles[y][x] === 1 ? new PIXI.Sprite(this.texture1) : new PIXI.Sprite(this.texture0);
+        const tile = this.tiles[y][x] > -1 ? new PIXI.Sprite(this.blSheet.textures[this.tiles[y][x]+".png"]) : 
+                                              new PIXI.Sprite(this.emptyTex);
         tile.zIndex = y+x+2;
         tile.x = (x-y)*(config.TILESIZE*this.camera.zoom/2) + this.camera.x;
         tile.y = (y+x)*(config.TILESIZE*this.camera.zoom/4) + this.camera.y;
-        tile.alpha = this.tiles[y][x] === 1 ? 1 : 0.25;
-        tile.scale.x = this.camera.zoom;
-        tile.scale.y = this.camera.zoom;
+        tile.alpha = this.tiles[y][x] > -1 ? 1 : 0.25;
+        tile.blendMode = PIXI.BLEND_MODES.NORMAL;
+        tile.width = config.TILESIZE*this.camera.zoom;
+        tile.height = config.TILESIZE*this.camera.zoom;
         this.container.addChild(tile);
       }
     }
@@ -260,13 +267,15 @@ export class PixiComponent extends React.Component {
     // calculates delta in dimensions
     let oldW = this.app.renderer.width;
     let oldH = this.app.renderer.height;
-    let deltaW = Math.round(window.innerWidth*0.70) - oldW;
-    let deltaH = Math.round(window.innerHeight*0.95) - oldH;
+    let targetW = Math.round(window.innerWidth*0.70);
+    let targetH = Math.round(window.innerHeight*0.95);
+    let deltaW = targetW - oldW;
+    let deltaH = targetH - oldH;
     // updates camera position
     this.camera.x += deltaW/2;
     this.camera.y += deltaH/2;
     // resizes renderer
-    this.app.renderer.resize( window.innerWidth*0.70, window.innerHeight*0.95);
+    this.app.renderer.resize(targetW, targetH);
     // resizes background
     this.bgSprite.width = this.app.screen.width;
     this.bgSprite.height = this.app.screen.height;
