@@ -1,5 +1,5 @@
 {
     "TILESIZE": 64,
-    "BOARD_SIZE": 3000,
+    "BOARD_SIZE": 1000,
     "BOARD_LAYERS": 1
   }

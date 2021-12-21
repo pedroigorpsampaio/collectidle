@@ -3,9 +3,12 @@ import * as PIXI from 'pixi.js';
 import emptyTile from './assets/0.png';
 import btnSheet from './assets/buttons/buttons.png';
 import btnSheetJson from './assets/buttons/buttons.json';
+import treeSheet from './assets/trees/shadowSinglesSheet.png';
+import treeData from './assets/trees/shadowSinglesSheet.json';
 import config from './config.json';
 import * as Vec2D from 'vector2d';
 import background from './assets/backgrounds/bg_world.gif';
+import CursorAxe from './assets/cursors/axe.png'
 
 export class PixiComponent extends React.Component {
   /**
@@ -14,9 +17,11 @@ export class PixiComponent extends React.Component {
   componentDidMount() {
     this.camera = this.props.state.camera;
     this.tiles = this.props.state.tiles;
+    this.resources = this.props.state.resources;
     this.selectedBlock = this.props.selectedBlock;
     this.isBuilding = this.selectedBlock > -1 ? true : false;
     this.blocksSheet = this.props.blocksSheet; this.blocksData = this.props.blocksData;
+    this.target = -1 // no target at the start
 
     this.app = new PIXI.Application({ 
       width: window.innerWidth*0.70, height: window.innerHeight*0.95, 
@@ -24,26 +29,31 @@ export class PixiComponent extends React.Component {
     });
     document.body.appendChild(this.app.view);
     this.app.view.style.position = 'absolute';this.app.view.style.left = '20px';this.app.view.style.top = '20px';
-
     // creates and renders background
     this.renderBackground();
     // create tiles and sprites container
     this.container = new PIXI.Container();
     this.container.sortableChildren = true;
     this.app.stage.addChild(this.container);
-    
+
     // Create empty slot texture
     this.emptyTex = PIXI.Texture.from(emptyTile);
 
     // loads buttons spritesheet and render them when loading is complete
-    this.loader = new PIXI.Loader();
     this.renderButtons();
 
-    // creates blocks spritesheet and render them
+    // creates blocks spritesheet to render them
     const baseTexture = PIXI.BaseTexture.from(this.props.blocksSheet);
     this.blSheet = new PIXI.Spritesheet(baseTexture, this.props.blocksData);
     this.blSheet.parse(() => {
       Object.keys(this.blSheet.textures).map((t) => this.blSheet.textures[t]);
+    });
+
+    // creates resources spritesheet to render them
+    const treeTex = PIXI.BaseTexture.from(treeSheet);
+    this.tSheet = new PIXI.Spritesheet(treeTex, treeData);
+    this.tSheet.parse(() => {
+      Object.keys(this.tSheet.textures).map((t) => this.tSheet.textures[t]);
     });
 
     // renders tilemap
@@ -61,10 +71,10 @@ export class PixiComponent extends React.Component {
 
     // mouse interation callbacks
     this.app.stage.interactive = true;
-    this.app.stage.on("pointerdown", (e) => this.props.onMouseDown(e));
-    this.app.stage.on("pointerup", (e) => this.props.onMouseUp(e));
-    this.app.stage.on("pointermove", (e) => this.props.onMouseMove(e));
-    //window.addEventListener("wheel", (e) => this.props.onWheel(e));
+    this.app.stage.on("pointerdown", (e) => this.props.onMouseDown(e, this.target));
+    this.app.stage.on("pointerup", (e) => this.props.onMouseUp(e, this.target));
+    this.app.stage.on("pointermove", (e) => this.props.onMouseMove(e, this.target));
+
     window.addEventListener('resize', (e) => this.resize());
     this.app.renderer.view.addEventListener('wheel', (e) => this.props.onWheel(e));
     
@@ -82,6 +92,7 @@ export class PixiComponent extends React.Component {
     // updates data sent via props
     this.camera = this.props.state.camera;
     this.tiles = this.props.state.tiles;
+    this.resources = this.props.state.resources;
     this.selectedBlock = this.props.selectedBlock;
     this.isBuilding = this.selectedBlock > -1 ? true : false;
     this.blocksSheet = this.props.blocksSheet; this.blocksData = this.props.blocksData;
@@ -223,10 +234,12 @@ export class PixiComponent extends React.Component {
     let dTileY = Math.round(dY / (tZ/2));
     let dInitY = Math.ceil(config.BOARD_SIZE / (2));
     let centerTile = [Math.round(config.BOARD_SIZE/2), Math.round(config.BOARD_SIZE/2)];
-    let nCols = Math.ceil(this.app.screen.width / (tZ/2))+3;
-    let nRows = Math.ceil(this.app.screen.height / (tZ/2))+4;
+    let nCols = Math.ceil(this.app.screen.width / (tZ/2))+5;
+    let nRows = Math.ceil(this.app.screen.height / (tZ/2))+6;
     let minI = (centerTile[0]+centerTile[1]-dTileY-dInitY) - (Math.ceil(nRows/2)); let maxI = (centerTile[0]+centerTile[1]-dTileY-dInitY) + (Math.ceil(nRows/2));
     let minJ = (centerTile[0]-centerTile[1]-dTileX) - (Math.ceil(nCols/2)); let maxJ = (centerTile[0]-centerTile[1]-dTileX) + (Math.ceil(nCols/2));
+
+    let isMouseOnResource = false;
 
     // loops only in the visible scope of tiles
     for(let i = minI; i < maxI; i++) {
@@ -235,20 +248,73 @@ export class PixiComponent extends React.Component {
         let y = Math.round(i-j/2); 
         // border control
         if(x<0 || x>=config.BOARD_SIZE || y<0 || y>= config.BOARD_SIZE) continue;
-        // if its not in building mode and there is no tile, do not draw demarcation tiles 
+        // if its not in building mode and there is no tile, do not draw
         if(!this.isBuilding && this.tiles[y][x] === -1) continue;
         // create and add tile to the container
         const tile = this.tiles[y][x] > -1 ? new PIXI.Sprite(this.blSheet.textures[this.tiles[y][x]+".png"]) : 
                                               new PIXI.Sprite(this.emptyTex);
+        let resTex = this.tSheet.textures[this.resources[y][x].img];
+        const resource = this.resources[y][x] !== -1 ? new PIXI.Sprite(resTex) : null;   
+        let dim =  config.TILESIZE*this.camera.zoom;  // current dimension of block sides
+        // tile properties                                  
         tile.zIndex = y+x+2;
-        tile.x = (x-y)*(config.TILESIZE*this.camera.zoom/2) + this.camera.x;
-        tile.y = (y+x)*(config.TILESIZE*this.camera.zoom/4) + this.camera.y;
+        tile.x = (x-y)*(dim/2) + this.camera.x;
+        tile.y = (y+x)*(dim/4) + this.camera.y;
         tile.alpha = this.tiles[y][x] > -1 ? 1 : 0.25;
         tile.blendMode = PIXI.BLEND_MODES.NORMAL;
-        tile.width = config.TILESIZE*this.camera.zoom;
-        tile.height = config.TILESIZE*this.camera.zoom;
+        tile.width = dim+1*this.camera.zoom;
+        tile.height = dim+1*this.camera.zoom;
+        // resource properties (if it exists)
+        if(resource !== null) {
+          let mousePosition = this.app.renderer.plugins.interaction.mouse.global;
+          resource.anchor.set(0.5, 0);
+          resource.zIndex = y+x+3;
+          resource.x = (x-y)*(dim/2) + this.camera.x + (config.TILESIZE*this.camera.zoom)/2 + 0.5*this.camera.zoom;
+          resource.y = (y+x)*(dim/4) + this.camera.y - (resource.height*this.camera.zoom)/2 - dim/3 + 0.5*this.camera.zoom;
+          resource.width *= this.camera.zoom;
+          resource.height *= this.camera.zoom;
+          resource.blendMode = PIXI.BLEND_MODES.NORMAL;
+          resource.interactive = true;
+          let h = resTex.frame.height * this.camera.zoom;
+          let w = resTex.frame.width * this.camera.zoom;
+
+          // if this resource is currently colliding with mouse pos, set it as target
+          if(isPointInRect(resource.x - w/2 - this.camera.zoom, resource.y + (resource.height - h) - resource.height/8 + h/32,
+                             w, h - h/32, mousePosition.x, mousePosition.y))  {
+            isMouseOnResource = true;
+            this.target = {i: y, j: x}; // saves resource hit
+          }
+
+          this.container.addChild(resource);
+          // let g = new PIXI.Graphics();
+          // // set the line style to have a width of 5 and set the color to red
+          // g.lineStyle(1, 0xFF0000);
+          // g.zIndex = 1212121;
+          // // draw a rectangle
+          // g.drawRect(resource.x - w/2 - this.camera.zoom, resource.y + (resource.height - h) - resource.height/8 + h/32, w, h - h/32);
+          // this.container.addChild(g);
+        }
         this.container.addChild(tile);
       }
+    }
+
+    if(!isMouseOnResource) { // mouse not on any resource
+      this.target = -1; // reset target to represent no resource target
+    }
+  }
+
+  /**
+   * Updates hover icons based on resource mouse is on
+   * @param {*} resource the resource to check if mouse is on
+   * @param {*} i the i index of resource in resource matrix
+   * @param {*} j the j index of resource in resource matrix
+   */
+  onResourceMouseOver(resource, i, j) {
+    if(this.isBuilding) // dont do nothing if its in building mode
+     return;
+    if(this.resources[i][j].id === 0) { // tree - only changes if it is still default cursor
+      if(document.body.style.cursor === 'default')
+        document.body.style.cursor =  'url('+CursorAxe+') 16 16,auto'; 
     }
   }
 
@@ -286,4 +352,14 @@ export class PixiComponent extends React.Component {
     this.border.drawRect(this.app.screen.x+1, this.app.screen.y+1, this.app.screen.width-1, this.app.screen.height-2);
   }
   
+}
+
+// function to find if given point
+// lies inside a given rectangle or not.
+function isPointInRect( x1,  y1,  w,  h,  x,  y) {
+  let x2 = x1 + w; let y2 = y1 + h;
+  if (x > x1 && x < x2 && y > y1 && y < y2)
+    return true;
+
+  return false;
 }

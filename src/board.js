@@ -1,9 +1,12 @@
 import React from 'react';
 import config from './config.json'
-import Tile from './tile.js';
 import Camera from './camera.js';
+import Resource from './resource.js';
 import * as Vec2D from 'vector2d';
+import treeData from './assets/trees/shadowSinglesSheet.json';
 import { PixiComponent } from './pixicomponent.js';
+import CursorAxe from './assets/cursors/axe.png'
+import CursorAxeRotated from './assets/cursors/axe_rotated.png'
 
 /**
  * Building block data
@@ -24,7 +27,10 @@ class Board extends React.Component {
   constructor(props) {
     super(props);
     this.state = {
-      tiles: this.props.tiles,
+      tiles: this.props.data.tiles, // tiles loaded (empty if no save)
+      treeSpots: this.props.data.treeSpots, // tree spots loaded (empty if no save)
+      resources: this.props.data.resources, // resources loaded (empty if no save)
+      vault: this.props.data.vault, // vault that represents player resources
       x: 0, // mouse current X position
       y: 0, // mouse current Y position
       camera: new Camera(), // creates board camera
@@ -40,7 +46,7 @@ class Board extends React.Component {
 
     // if its a new board, load initial disposition of blocks
     if (this.props.isNewBoard)
-      this.loadTiles();
+      this.loadEmpty();
 
     //centers camera
     let center = this.getBoardCenter()
@@ -48,9 +54,49 @@ class Board extends React.Component {
     this.state.camera.y = center.y;
   }
 
-  loadTiles() {
+  // load initial game for no save loads
+  loadEmpty() {
     const tiles = this.state.tiles.slice();
-    tiles[Math.floor(config.BOARD_SIZE / 2)][Math.floor(config.BOARD_SIZE / 2)] = 0;
+    const resources = this.state.resources.slice();
+    let i, j; i = j = Math.floor(config.BOARD_SIZE / 2);
+    tiles[i][j] = 0; 
+    resources[i][j] = new Resource({i: i, j: j, id: 0, img: "0_3.png", birth: performance.now(), life: 10, maxLife: 10});
+    //this.addSpot(this.state.treeSpots, i, j)
+  }
+
+  // adds a spot i,j into a spotlist
+  addSpot(spotList, i, j) {
+    spotList.push(i+"_"+j);
+  }
+
+  // receives a spot in string format and returns the [i,j] equivalent
+  evalSpot(spot) {
+    let idxs = spot.split("_");
+    return {i: idxs[0], j: idxs[1]};
+  }
+  
+  // resets a spot list
+  resetSpotList(spotList) {
+    spotList.length = 0;  
+  }
+
+  // respawn resources (called in a timer with a preset interval)
+  respawn() {
+    const treeSpots = this.state.treeSpots.slice();
+    const resources = this.state.resources.slice();
+    // chance of spawning tree
+    let treeChance = treeData["frames"]["0_3.png"]["chance"];
+    let globalChance = 1 - (1-treeChance)**treeSpots.length; // calculates the chance of n (treeSpots.length) tries to spawn
+    if(Math.random() < globalChance) { // tries to spawn a tree if a slot is available 
+      if(this.state.treeSpots.length > 0) {
+        let s =  Math.round(Math.random() * treeSpots.length); // select a random available spot
+        if (s < 0) s = 0; if (s >= treeSpots.length) s = treeSpots.length-1; // border patrol
+        let spot = this.evalSpot(treeSpots[s]); // eval spot from string default format
+        resources[spot.i][spot.j] = new Resource({i: spot.i, j: spot.j, id: 0, img: "0_2.png", birth: performance.now(), life: 5, maxLife: 10}); // add tree to spot randomized
+        treeSpots.splice(s, 1); // removes from available tree spots as it is occupied now
+        this.setState({treeSpots: treeSpots, resources: resources}); // updates state with modified data
+      }
+    }
   }
 
   /**
@@ -95,14 +141,24 @@ class Board extends React.Component {
 
   /**
    * Handles mouse up and down events
-   * @param {The event that tirggered this callback} event 
+   * @param {Event} event the event that fired this callback
+   * @param {Object} target target resource (i,j) if any, or -1 if mouse is not on any resource
    */
-  handleMouseClick = (event) => {
+  handleMouseClick = (event, target) => {
+    event.stopPropagation();
+    let eX = event.data.global.x; let eY = event.data.global.y;
+    let isBuilding = this.props.selectedBlock > -1 ? true : false;
+
+    // if its not in building mode and if click targets a resource, handle resource click event
+    if(target !== -1 && !isBuilding) {
+      this.handleResourceEvent(event, target);
+    } else {
+      document.body.style.cursor =  'default';  // reset to default cursor if not on resource
+    }
+
     if (event.type === "pointerdown") {
-      this.setState({ isMouseDown: true });
-      let eX = event.data.global.x; let eY = event.data.global.y;
-      // saves the position last clicked;
-      this.setState({ lastX: eX, lastY: eY, lastDragX: eX, lastDragY: eY })
+      // saves the position last clicked for drag event and update states
+      this.setState({ isMouseDown: true, lastX: eX, lastY: eY, lastDragX: eX, lastDragY: eY });
     } else {
       if (this.state.isMouseDown) { // click happened
         let t = performance.now(); // for double click
@@ -118,40 +174,114 @@ class Board extends React.Component {
 
   /**
    * handles double click events
-   * @param {event} event the event that triggered the double click
+   * @param {Event} event the event that triggered the double click
    */
   handleDoubleClick(event) {
     // double click with left mouse -> center map
     if(event.data.button === 2)
       this.center();
+    else // handles left click normally
+      this.handleClick(event, event.data.global.x, event.data.global.y);
+  }
+
+  /**
+   * Handles events that are fired on interactions with resources
+   * 
+   * @param {Event} e the event that triggered the resource handler 
+   * @param {Object} target target resource (i,j) if any, or -1 if mouse is not on any resource
+   */
+  handleResourceEvent(e, target) {
+    let resourceHit = this.state.resources[target.i][target.j]; // the resource that fired the event
+
+    if(e.data.button === 2) return; // do nothing if left click triggered resource event
+
+    if (e.type === "pointerdown") { // mouse down triggered the event
+      // updates mouse cursor based on resource clicked
+      switch(resourceHit.id) {
+        case 0: // tree
+          document.body.style.cursor = 'url('+CursorAxeRotated+') 8 8,auto'; 
+          break;
+        default:
+          document.body.style.cursor =  'default';
+          console.log("Unknown resource clicked down"); 
+          break;
+      }
+    } else if (e.type === "pointerup") { // mouse up triggered the event
+      if(this.lastEvent !== undefined && this.lastEvent === "pointerdown") { // only do something if it was a full click
+        // updates based on resource clicked
+        switch(resourceHit.id) {
+          case 0: // tree
+            document.body.style.cursor = 'url('+CursorAxe+') 8 8,auto';  // updates mouse cursor
+            const resources = this.state.resources.slice();
+            resourceHit.life--;
+            let percent = resourceHit.life / resourceHit.maxLife;
+            let img_id = Math.floor(percent*100 / 25);
+            
+            if(resourceHit.life>0) {
+              resourceHit.img = resourceHit.id+"_"+img_id+".png";
+              resources[resourceHit.i][resourceHit.j] = resourceHit;
+            }
+            else
+              resources[resourceHit.i][resourceHit.j] = -1;
+
+            this.setState({resources:resources});
+            break;
+          default:
+            document.body.style.cursor =  'default';
+            console.log("Unknown resource clicked down"); 
+            break;
+        }
+      } 
+    } else if (e.type === "pointermove") { // mouse move triggered the event
+        switch(resourceHit.id) {
+          case 0: // tree
+            document.body.style.cursor = 'url('+CursorAxe+') 8 8,auto'; 
+            break;
+          default:
+            console.log("Unknown resource clicked down"); 
+            document.body.style.cursor =  'default';
+            break;
+        }
+    }
+    // updates last event
+    this.lastEvent = e === undefined ? undefined : e.type;
   }
 
   /**
    * Handles mouse movements events
-   * @param {the event data} e 
+   * @param {Event} e the event data
+   * @param {Object} target target resource (i,j) if any, or -1 if mouse is not on any resource
    */
-  onMouseMove(e) {
+  onMouseMove(e, target) {
     e.stopPropagation();
-    //e.preventDefault()
+    //e.preventDefault();
+
     let eX = e.data.global.x; let eY = e.data.global.y;
     this.setState({ x: eX, y: eY });
+    let isBuilding = this.props.selectedBlock > -1 ? true : false;
+
+    // if event has a target resource send it to the handler of resource event
+    if(target !== -1 && !isBuilding) {
+      this.handleResourceEvent(e, target);
+    } else {
+      document.body.style.cursor =  'default';  // reset to default cursor if not on resource
+    }
 
     if (this.state.isMouseDown) {
+      // calculates drag direction 
+      const mousePos = new Vec2D.Vector(e.data.global.x, e.data.global.y);
+      const lastDrag = new Vec2D.Vector(this.state.lastDragX, this.state.lastDragY);
+      this.setState({ isDragging: true, lastDragX: eX, lastDragY: eY });
+      const offset = mousePos.subtract(lastDrag)
       // drag event
       if (e.data.buttons === 2) {
-        // calculates drag direction 
-        const mousePos = new Vec2D.Vector(e.data.global.x, e.data.global.y);
-        const lastDrag = new Vec2D.Vector(this.state.lastDragX, this.state.lastDragY);
-        this.setState({ isDragging: true, lastDragX: eX, lastDragY: eY });
-        const offset = mousePos.subtract(lastDrag)
         // adjusts camera accordingly
         this.updateCamera(offset)
       } else if (e.data.buttons === 1) { // if it is left click
-        let isBuilding = this.props.selectedBlock > -1 ? true : false;
         if (isBuilding) // if it is building
           this.placeBlock(); // delegate block placement to the method responsible for it
       }
-    } else {
+    } else { // not dragging
       this.setState({ isDragging: false });
     }
   }
@@ -171,77 +301,79 @@ class Board extends React.Component {
    * Rotates board in the desired direction orientation
    */
   rotate(direction) {
-    const matrix = this.state.tiles.slice();
+    const matrix = this.state.tiles;
+    const resMatrix = this.state.resources;
     const oldCenterX = this.getCenter(matrix[0]).x;
-
-    const n = matrix.length;
-
-    if (direction === "clockwise") { // clockwise
-      for (let i = 0; i < n / 2; i++) {
-        for (let j = i; j < n - i - 1; j++) {
-          let tmp = matrix[i][j];
-          matrix[i][j] = matrix[n - j - 1][i];
-          matrix[n - j - 1][i] = matrix[n - i - 1][n - j - 1];
-          matrix[n - i - 1][n - j - 1] = matrix[j][n - i - 1];
-          matrix[j][n - i - 1] = tmp;
+    this.resetSpotList(this.state.treeSpots); // resets spot list of trees (will be rebuilt with new positions)
+    const rows = matrix.length, cols = matrix[0].length;
+    const grid = [];
+    const resGrid = [];
+    for (let j = 0; j < cols; j++) {
+      grid[j] = Array(rows);
+      resGrid[j] = Array(rows);
+    }
+    for (let i = 0; i < rows; i++) {
+      for (let j = 0; j < cols; j++) {
+        let dirI = direction === "clockwise" ? rows-i-1 : i; 
+        let dirJ = direction === "clockwise" ? j : cols-j-1;
+        grid[j][i] = matrix[dirI][dirJ];
+        resGrid[j][i] = resMatrix[dirI][dirJ];
+        if(resGrid[j][i] !== -1) { // updates resource position if there is any
+          resGrid[j][i].i = j; 
+          resGrid[j][i].j = i;
+        }
+        // rebuilds spot lists
+        switch(grid[j][i]) {
+          case 0: // grass -> tree spot
+            this.addSpot(this.state.treeSpots, j, i);
+            break;
+          default: // type that does not need to be in an aux list, only visual block
+            break;
         }
       }
     }
-    else { // anticlockwise
-      for (let i = 0; i < n / 2; i++) {
-        for (let j = i; j < n - i - 1; j++) {
-          let tmp = matrix[i][j];
-          matrix[i][j] = matrix[j][n - 1 - i];
-          matrix[j][n - 1 - i] = matrix[n - 1 - i][n - 1 - j];
-          matrix[n - 1 - i][n - 1 - j] = matrix[n - 1 - j][i];
-          matrix[n - 1 - j][i] = tmp;
-        }
-      }
-    };
-    const xOffset = this.getCenter(matrix).x - oldCenterX;
-    const camera = Object.assign({}, this.state.camera);
+    const xOffset = this.getCenter(grid).x - oldCenterX;
+    const camera = Object.assign({}, this.state.camera); 
     camera.x -= xOffset;
-    this.setState({ tiles: matrix, camera: camera });
+    this.setState({tiles: grid, resources: resGrid, camera:camera});  
   }
 
   /**
-   * Handles click interactions in the board tiles
+   * Handles click interactions
    * @param {e} e the event that triggered the click callback
-   * @param {the x coord of the click to be handled} x 
-   * @param {the y coord of the click to be handled} y 
    */
-  handleClick(e, x, y) {
+  handleClick(e) {
     let isBuilding = this.props.selectedBlock > -1 ? true : false;
-    if (!this.state.isDragging && !isBuilding) {
-      const tiles = this.state.tiles.slice();
 
-      // dont mess with undefined
-      if (typeof tiles == "undefined")
-        return;
-
-      var idx = this.convertToMap(x, y);
-      var i = Math.floor(idx[0]);
-      var j = Math.floor(idx[1]);
-
-      // precision calculation to consider only the top plane of cube
-      let topFactor = this.getTopFactor(i, j, x, y);
-
-      // if it hits some existing block
-      if (tiles[i][j] !== 0) {
-
-        // Click on a valid cube plane!!! Success!!!!!
-        if (topFactor > 0 && topFactor <= 1) {
-          // tiles[i][j] = 0; // updates it
-          console.log("clicked on [" + i + ", " + j + "]");
-        }
-
-      }
-
-      // updates layers in game state
-      this.setState({ tiles: tiles });
-    } else if (isBuilding && e.data.button === 0) { // is in building mode (able to place blocks)
+    if (isBuilding && e.data.button === 0) { // is in building mode (able to place blocks)
       this.placeBlock();
     }
+  }
+
+  /**
+   * Raycasts a (x,y) position to scan for resource hits.
+   * Only considers the top plane of a cube as a hit area for any resource.
+   * @param {*} x the x position of mouse to raycast
+   * @param {*} y the y position of mouse to raycast
+   * @returns returns the resource hit, or -1 if no resources are hit
+   */
+  raycast(x, y) {
+    var idx = this.convertToMap(x, y);
+    var i = Math.floor(idx[0]);
+    var j = Math.floor(idx[1]);
+
+    // if it hits some existing block
+    if (this.state.tiles[i][j] !== -1) {
+      // precision calculation to consider only the top plane of cube
+      let topFactor = this.getTopFactor(i, j, x, y);
+      // Hit on a valid cube plane!!! Success!!!!!
+      if (topFactor > 0 && topFactor <= 1) {
+        // return the resource on top of cube plane hit (-1 if no resources are in the cube)
+        return this.state.resources[i][j]; 
+      }
+    }
+    // no cube hit or no top plane of a cube, return -1;
+    return -1;
   }
 
   /**
@@ -298,25 +430,6 @@ class Board extends React.Component {
     let offsetY = Math.abs(cy - tcy) * 2;
     let offsetX = Math.abs(cx - tcx);
     return (offsetX + offsetY) / ((config.TILESIZE * this.state.camera.zoom / 4) + (config.TILESIZE * this.state.camera.zoom / 4));
-  }
-
-  /**
-   * Renders the tile
-   * @param {The i-index of the tile} i 
-   * @param {The j-index of the tile} j 
-   */
-  renderTile(i, j, key) {
-    return (
-      <Tile
-        value={this.state.tiles[i][j]}
-        key={key}
-        camera={this.state.camera}
-        zIndex={i + j + 2}
-        top={(i + j) * (config.TILESIZE * this.state.camera.zoom / 4) + this.state.camera.y}
-        left={(j - i) * (config.TILESIZE * this.state.camera.zoom / 2) + this.state.camera.x}
-      />
-    )
-
   }
 
   // renders projection ofselected tile on tilemap on mouse move position
@@ -414,7 +527,14 @@ class Board extends React.Component {
     if (valid) { // has a valid place to place block
       const tiles = this.state.tiles.slice();
       tiles[i][j] = this.props.selectedBlock;
-      this.props.resetBlock();
+      // add to the aux list of spots based o tile type
+      switch(this.props.selectedBlock) {
+        case 0: // grass -> tree spot
+          this.addSpot(this.state.treeSpots, i, j);
+          break;
+        default: // type that does not need to be in an aux list, only visual block
+          break;
+      }
       this.setState({ tiles: tiles });
     }
   }
@@ -445,6 +565,7 @@ class Board extends React.Component {
             onMouseUp={this.handleMouseClick}
             onMouseMove={this.onMouseMove.bind(this)}
             onWheel={this.onWheel.bind(this)}
+            onResourceEvent={this.handleResourceEvent.bind(this)}
             onRotateAntiBtn={() => this.rotate("anticlockwise")}
             onCenterBtn={this.center.bind(this)}
             onRotateBtn={() => this.rotate("clockwise")}
@@ -465,7 +586,10 @@ class Board extends React.Component {
    */
   componentDidMount() {
     window.addEventListener('resize', this.resize);
+    window.addEventListener('mousedown', (e) => e.preventDefault());
     this.forceUpdate();
+    // starts respawn timer
+    this.respawnTimer = setInterval(this.respawn.bind(this), 1000);
     //this.loadTiles(); // load initial tiles
   }
 
@@ -474,22 +598,9 @@ class Board extends React.Component {
    */
   componentWillUnmount() {
     window.removeEventListener('resize', this.resize);
+    window.removeEventListener('mousedown', (e) => e.preventDefault());
+    clearInterval(this.respawnTimer);
   }
 }
 
 export default Board;
-
-
-/**
- * Creates and fills multidimensional arrays with
- * a default value
- * Mohammed Ashfaq @ StackOverflow
- * @param rows The number of rows for the array
- * @param columns The number of columns for the array
- * @param defaultValue The default value for each field of the array
- * @returns The newly created multidimensional array populated with the default value
- */
-// function createAndFill2DArray({rows, columns, defaultValue}){
-//     return Array.from({ length:rows }, (e, i) => (
-//     Array.from({ length:columns }, (e, j)=> defaultValue)));
-// }

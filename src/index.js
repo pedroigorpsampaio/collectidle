@@ -15,11 +15,13 @@ import Card from '@mui/material/Card';
 import CardContent from '@mui/material/CardContent';
 import IconButton from '@mui/material/IconButton';
 import BuyIcon from '@mui/icons-material/ShoppingCart';
+import CancelIcon from '@mui/icons-material/Cancel';
 import blocksSheet from './assets/blocks/sheet.png';
 import blocksData from './assets/blocks/sheet.json';
 import List from 'react-virtualized/dist/commonjs/List';
 import AutoSizer from 'react-virtualized/dist/commonjs/AutoSizer';
 import SpriteSheet from './spritesheet.js';
+import Vault from './vault.js'
 
 export const STATE_LOADING = 1;
 export const STATE_RUNNING = 2;
@@ -33,9 +35,14 @@ class Game extends React.Component {
     this.state = {
       loadProgress: 0,
       selectedBlock: -1,
-      loadText: "Loading map...",
+      loadText: "Loading game...",
       current: STATE_LOADING,
-      tiles: null,
+      data: {
+        tiles: null,
+        treeSpots: null,
+        resources: null,
+        vault: null,
+      },
       isNewBoard: true
     }
   }
@@ -74,14 +81,19 @@ class Game extends React.Component {
     if (window.Worker) {
       // creates worker
       this.boardWorker = new Worker(Load.getWorkerScript());
-      // send load map message
-      this.boardWorker.postMessage({'cmd': 'loadMap', 'rows': Config.BOARD_SIZE, 'columns': Config.BOARD_SIZE, 'defaultValue': -1});
+      // send load new game message
+      this.boardWorker.postMessage({'cmd': 'loadNewGame', 'rows': Config.BOARD_SIZE, 'columns': Config.BOARD_SIZE, 'defaultValue': -1});
       this.boardWorker.onmessage = e => {
-        if(e.data.cmd === "updateProgress")
+        if(e.data.cmd === "updateProgress") // update load progress
           this.setState({loadProgress: e.data.progress});
-        else  if(e.data.cmd === "receiveBoard"){
-          const tiles = new Int8Array(e.data.tiles); // gets board as an Uint8Array to be converted to a matrix and stored
-          this.setState({tiles: this.matrixify(tiles, Config.BOARD_SIZE, Config.BOARD_SIZE), current:STATE_RUNNING});
+        else if(e.data.cmd === "loadNewComplete"){ // new game loaded
+          const tiles = new Int8Array(e.data.tiles); // gets tiles as an int8Array to be converted to a matrix and stored
+          let data = Object.assign({}, this.state.data); // stores loaded data and create remaining data for new game
+          data.tiles = this.matrixify(tiles, Config.BOARD_SIZE, Config.BOARD_SIZE);
+          data.resources = this.matrixify(JSON.parse(e.data.resources), Config.BOARD_SIZE, Config.BOARD_SIZE);
+          data.treeSpots = [];
+          data.vault = new Vault();
+          this.setState({data: data, current:STATE_RUNNING});
         }
       };
 
@@ -118,8 +130,8 @@ class Game extends React.Component {
     return (
       <div className="game" >
         <div>
-          <Board tiles={this.state.tiles} isNewBoard={this.state.isNewBoard} 
-                  selectedBlock={this.state.selectedBlock} resetBlock={this.resetBlock.bind(this)}
+          <Board data={this.state.data} isNewBoard={this.state.isNewBoard} 
+                  selectedBlock={this.state.selectedBlock} 
                   blocksSheet={blocksSheet} blocksData={blocksData}/>
         </div>
         <div className="game-info">
@@ -168,8 +180,8 @@ class Game extends React.Component {
             <Typography variant="subtitle1" color="gold" component="div">
               Price: {blockPrice}
             </Typography>
-            <IconButton aria-label="buy" onClick={()=>this.setState({selectedBlock: index})}> 
-              <BuyIcon sx={{ height: 38, width: 38 }} />
+            <IconButton aria-label="buy" onClick={()=>this.toggleBuild(index)}> 
+              {this.renderCardButton()}
             </IconButton>
           </Box>
         </Box>
@@ -186,6 +198,25 @@ class Game extends React.Component {
     );
   }
 
+  // renders card button accordingly to current mode
+  renderCardButton() {
+    if(!this.isBuilding())
+      return (<BuyIcon sx={{ height: 38, width: 38 }}/>)
+    else 
+      return (<CancelIcon sx={{ height: 38, width: 38 }}/>)
+  }
+
+  // toggles build mode by toggling selected block index
+  toggleBuild(index) {
+    if(this.state.selectedBlock === -1)
+      this.setState({selectedBlock: index});
+    else
+      this.setState({selectedBlock: -1})
+  }
+
+  // if is in building mode
+  isBuilding() {return this.state.selectedBlock > -1;}
+
   /**
    * Renders each row of virtualized list
    */
@@ -199,7 +230,7 @@ class Game extends React.Component {
     );
   }
 
-  resetBlock = () => {this.setState({selectedBlock: -1})}
+  //resetBlock = () => {this.setState({selectedBlock: -1})}
 
   /**
    * The side UI accordion
