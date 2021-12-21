@@ -1,24 +1,23 @@
 {
   "files": {
     "main.css": "/collectidle/static/css/main.8fe4f558.chunk.css",
-    "main.js": "/collectidle/static/js/main.01b6d5b5.chunk.js",
-    "main.js.map": "/collectidle/static/js/main.01b6d5b5.chunk.js.map",
+    "main.js": "/collectidle/static/js/main.dd66981c.chunk.js",
+    "main.js.map": "/collectidle/static/js/main.dd66981c.chunk.js.map",
     "runtime-main.js": "/collectidle/static/js/runtime-main.9f2b98d6.js",
     "runtime-main.js.map": "/collectidle/static/js/runtime-main.9f2b98d6.js.map",
-    "static/js/2.b0b6b57a.chunk.js": "/collectidle/static/js/2.b0b6b57a.chunk.js",
-    "static/js/2.b0b6b57a.chunk.js.map": "/collectidle/static/js/2.b0b6b57a.chunk.js.map",
+    "static/js/2.4ba137a7.chunk.js": "/collectidle/static/js/2.4ba137a7.chunk.js",
+    "static/js/2.4ba137a7.chunk.js.map": "/collectidle/static/js/2.4ba137a7.chunk.js.map",
     "index.html": "/collectidle/index.html",
     "static/css/main.8fe4f558.chunk.css.map": "/collectidle/static/css/main.8fe4f558.chunk.css.map",
-    "static/js/2.b0b6b57a.chunk.js.LICENSE.txt": "/collectidle/static/js/2.b0b6b57a.chunk.js.LICENSE.txt",
-    "static/media/2.3b93bd89.png": "/collectidle/static/media/2.3b93bd89.png",
+    "static/js/2.4ba137a7.chunk.js.LICENSE.txt": "/collectidle/static/js/2.4ba137a7.chunk.js.LICENSE.txt",
     "static/media/bg_world.4fae2a5e.gif": "/collectidle/static/media/bg_world.4fae2a5e.gif",
     "static/media/buttons.c096f3b1.png": "/collectidle/static/media/buttons.c096f3b1.png",
-    "static/media/sheet.1761ab07.png": "/collectidle/static/media/sheet.1761ab07.png"
+    "static/media/sheet.6889c4f5.png": "/collectidle/static/media/sheet.6889c4f5.png"
   },
   "entrypoints": [
     "static/js/runtime-main.9f2b98d6.js",
-    "static/js/2.b0b6b57a.chunk.js",
+    "static/js/2.4ba137a7.chunk.js",
     "static/css/main.8fe4f558.chunk.css",
-    "static/js/main.01b6d5b5.chunk.js"
+    "static/js/main.dd66981c.chunk.js"
   ]
 }
